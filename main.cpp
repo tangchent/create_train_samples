@@ -14,22 +14,30 @@ Point start;
 Mat frame;
 int postiveCount = 0;
 
+/**
+ * mouse push CALLBACK function
+ *
+ * @param event enum kind,type of mouse push.
+ * @param x The x coordinate of the mouse in the window.
+ * @param y The y coordinate of the mouse in the window.
+ * @return
+ */
 void onMouse(int event,int x,int y,int,void*)
 {
-    if(event == CV_EVENT_LBUTTONDOWN) {
+    if(event == CV_EVENT_LBUTTONDOWN) { //start of select
         clickFlag = true;
         start.x = x;
         start.y = y;
     }
-    else if(event == CV_EVENT_LBUTTONUP) {
+    else if(event == CV_EVENT_LBUTTONUP) { //end of select
         clickFlag = false;
-        if (selectRect.width > 10 && selectRect.height > 10) {
+        if (selectRect.width > 10 && selectRect.height > 10) { //ensure the area is big enough
             rects.push_back(selectRect);
             selectRect.width = 0;
             selectRect.height = 0;
         }
     }
-    if (clickFlag) {
+    if (clickFlag) { // show realtime select area
         if (x < start.x) {
             selectRect.x = x;
             selectRect.width = start.x - x;
@@ -47,6 +55,7 @@ void onMouse(int event,int x,int y,int,void*)
     }
 }
 
+//function declaration
 void createSamples(Mat& mat,vector<Rect>& rect);
 
 int main()
@@ -100,6 +109,12 @@ int main()
     return 0;
 }
 
+/**
+ * use a picture to create samples
+ * @param mat The orignal picture that contains postive samples and negtive samples
+ * @param rect postive samples areas that marked by yourself
+ * @return
+ */
 void createSamples(Mat& mat,vector<Rect>& rect)
 {
     Mat grayImage;
