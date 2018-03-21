@@ -55,21 +55,36 @@ void onMouse(int event,int x,int y,int,void*)
     }
 }
 
-//function declaration
+//function declarations
 void createSamples(Mat& mat,vector<Rect>& rect);
+void executeCMD(const char *cmd, vector<String *>& result);
 
 int main()
 {
+    int index = 0;
     char c;
     Mat imageRead;
     Mat imageShow;
+    vector<String *> result(1024);
+    char filename[256];
+
+    result.clear();
+    executeCMD("ls data/*.png",result); //get file name
 
     namedWindow("image",1);
     setMouseCallback("image",onMouse,0);
-    imageRead = imread("data/0000000000.png");
+    //remove '\n'
+    strncpy(filename,result.at(index)->c_str(),result.at(index)->size() - 1);
+    //read image
+    imageRead = imread(filename);
 
     while (1) {
+        if (imageRead.empty()) {
+            printf(" --(!) No image -- Break!");
+            break;
+        }
 
+        //copy for draw
         imageShow = imageRead.clone();
         for (vector<Rect>::iterator iter = rects.begin(); iter != rects.end(); ++iter) {
             rectangle(imageShow,*iter,Scalar(255,0,0));
@@ -84,19 +99,27 @@ int main()
         if (c == 27) { //ESC
             break;
         } else if (c == 'a' || c == 'A' || c == 81) { //a or left arrow
-            imageRead = imread("data/0000000010.png");
+            if (--index <  0)    index = 0;
+            //remove '\n'
+            strncpy(filename,result.at(index)->c_str(),result.at(index)->size() - 1);
+            //read image
+            imageRead = imread(filename);
             rects.clear();
             selectRect = Rect(0,0,0,0);
         } else if (c == 'd' || c == 'D' || c == 83) { //d or right arrow
-            imageRead = imread("data/0000000020.png");
+            if (++index > (int)(result.size() - 1))    index = 0;
+            //remove '\n'
+            strncpy(filename,result.at(index)->c_str(),result.at(index)->size() - 1);
+            //read image
+            imageRead = imread(filename);
             rects.clear();
             selectRect = Rect(0,0,0,0);
-        } else if (c == 'c' || c == 'C') {
+        } else if (c == 'c' || c == 'C') { //cancel
             rects.pop_back();
             selectRect = Rect(0,0,0,0);
             imageShow = imageRead.clone();
             for (vector<Rect>::iterator iter = rects.begin(); iter != rects.end(); ++iter) {
-                rectangle(imageShow,*iter,Scalar(255,0,0));
+                rectangle(imageShow,*iter,Scalar(255,0,0)); // re-draw
             }
             imshow("image",imageShow);
         } else if (c == 's' || c == 'S') { //save
@@ -127,5 +150,40 @@ void createSamples(Mat& mat,vector<Rect>& rect)
         if (cut.rows > 10 && cut.cols > 10) {
             imwrite("pos/pos.png", cut);
         }
+    }
+}
+
+/**
+ * execute command use command line
+ * only for linux platform , windows is not supported!
+ * @param cmd. the command name needed to be executed
+ * only support linux commands
+ * @param result . the reference of command result.
+ * if execute 'ls' ,the result contains all file name in current dir
+ * attention that result is split by '\n',and each element contains '\n'
+ * @return
+ */
+void executeCMD(const char *cmd, vector<String *>& result)
+{
+    char buf_ps[1024];
+    char ps[1024];
+    FILE * ptr;
+    String * str = NULL;
+    strcpy(ps, cmd);
+    if((ptr = popen(ps, "r")) != NULL) {
+        while(fgets(buf_ps, 1024, ptr) != NULL) {
+            str = new String(buf_ps);
+            if (str != NULL) {
+                result.push_back(str);
+            } else {
+                break;
+            }
+            str = NULL;
+        }
+        pclose(ptr);
+        ptr = NULL;
+    }
+    else {
+        printf("popen '%s' error\n", ps);
     }
 }
