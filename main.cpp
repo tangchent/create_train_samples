@@ -4,6 +4,17 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/core/core.hpp>
 
+#include <stdio.h>
+
+#define MIN_STEP            12
+#define SAMPLE_WIDTH        32
+#define SAMPLE_HEIGHT       32
+#define MAX_SAMPLE_WIDTH    320
+#define MAX_SAMPLE_HEIGHT   320
+#define FACTOR              1.2f
+
+#define POSTIVE_DIR_NAME    "pos/"
+#define NEGTIVE_DIR_NAME    "neg/"
 
 using namespace cv;
 using namespace std;
@@ -31,11 +42,13 @@ void onMouse(int event,int x,int y,int,void*)
     }
     else if(event == CV_EVENT_LBUTTONUP) { //end of select
         clickFlag = false;
-        if (selectRect.width > 10 && selectRect.height > 10) { //ensure the area is big enough
+        if (selectRect.width > SAMPLE_WIDTH && selectRect.height > SAMPLE_HEIGHT) { //ensure the area is big enough
+            selectRect.x = selectRect.x < 0 ? 0 : selectRect.x;
+            selectRect.y = selectRect.y < 0 ? 0 : selectRect.y;
             rects.push_back(selectRect);
-            selectRect.width = 0;
-            selectRect.height = 0;
         }
+        selectRect.width = 0;
+        selectRect.height = 0;
     }
     if (clickFlag) { // show realtime select area
         if (x < start.x) {
@@ -56,7 +69,7 @@ void onMouse(int event,int x,int y,int,void*)
 }
 
 //function declarations
-void createSamples(Mat& mat,vector<Rect>& rect);
+void createSamples(Mat& mat,vector<Rect>& rects,char* filename);
 void executeCMD(const char *cmd, vector<String *>& result);
 
 int main()
@@ -75,8 +88,11 @@ int main()
     setMouseCallback("image",onMouse,0);
     //remove '\n'
     strncpy(filename,result.at(index)->c_str(),result.at(index)->size() - 1);
+    //add '\0'
+    filename[result.at(index)->size()] = '\0';
     //read image
     imageRead = imread(filename);
+    rects.clear();
 
     while (1) {
         if (imageRead.empty()) {
@@ -102,20 +118,28 @@ int main()
             if (--index <  0)    index = 0;
             //remove '\n'
             strncpy(filename,result.at(index)->c_str(),result.at(index)->size() - 1);
+            //add '\0'
+            filename[result.at(index)->size()] = '\0';
             //read image
             imageRead = imread(filename);
+            printf("filename:%s \n",filename);
             rects.clear();
             selectRect = Rect(0,0,0,0);
         } else if (c == 'd' || c == 'D' || c == 83) { //d or right arrow
             if (++index > (int)(result.size() - 1))    index = 0;
             //remove '\n'
             strncpy(filename,result.at(index)->c_str(),result.at(index)->size() - 1);
+            //add '\0'
+            filename[result.at(index)->size()] = '\0';
             //read image
             imageRead = imread(filename);
+            printf("filename:%s \n",filename);
             rects.clear();
             selectRect = Rect(0,0,0,0);
         } else if (c == 'c' || c == 'C') { //cancel
-            rects.pop_back();
+            if (rects.size() > 0) {
+                rects.pop_back();
+            }
             selectRect = Rect(0,0,0,0);
             imageShow = imageRead.clone();
             for (vector<Rect>::iterator iter = rects.begin(); iter != rects.end(); ++iter) {
@@ -123,7 +147,7 @@ int main()
             }
             imshow("image",imageShow);
         } else if (c == 's' || c == 'S') { //save
-            createSamples(imageRead,rects);
+            createSamples(imageRead,rects,filename);
         }
     }
 
@@ -133,24 +157,101 @@ int main()
 }
 
 /**
- * use a picture to create samples
- * @param mat The orignal picture that contains postive samples and negtive samples
- * @param rect postive samples areas that marked by yourself
- * @return
+ * judge if rect is in rects area
+ * @param rects.
+ * @param rect.
+ * @return bool true is rect in rects area
  */
-void createSamples(Mat& mat,vector<Rect>& rect)
-{
-    Mat grayImage;
-    Mat cut;
-    cvtColor(mat, grayImage, CV_BGR2GRAY);
-    for (vector<Rect>::iterator iter = rect.begin(); iter != rect.end(); ++iter) {
-        cut = Mat(grayImage,
-                  Range((*iter).y,(*iter).y+(*iter).height),//row range
-                  Range((*iter).x,(*iter).x+(*iter).width));//col range
-        if (cut.rows > 10 && cut.cols > 10) {
-            imwrite("pos/pos.png", cut);
+inline bool isInRect(vector<Rect>& rects,Rect rect) {
+    for (vector<Rect>::iterator iter = rects.begin(); iter != rects.end(); ++iter) {
+        if (rect.x > (iter->x - SAMPLE_WIDTH/2) &&
+                rect.y > (iter->y - SAMPLE_HEIGHT/2)&&
+                rect.x < (iter->x + iter->width + SAMPLE_WIDTH/2) &&
+                rect.y < (iter->y + iter->height + SAMPLE_HEIGHT/2)) {
+            return true;
         }
     }
+    return false;
+}
+
+/**
+ * use a picture to create samples
+ * @param mat. The orignal picture that contains postive samples and negtive samples
+ * @param rect. postive samples areas that marked by yourself
+ * @param filename. filename of mat
+ * @return
+ */
+void createSamples(Mat& mat,vector<Rect>& rects,char* filename)
+{
+    char cutFilename[256];
+    int count;
+    int length;
+    int filenameLength;
+    int widthStep,heightStep;
+    Mat cut;
+    Mat resizeCut;
+    Rect rect = Rect(0,0,SAMPLE_WIDTH,SAMPLE_HEIGHT);
+
+    count  = 0;
+    length = strlen(NEGTIVE_DIR_NAME);
+    filenameLength = strlen(filename);
+    strcpy(cutFilename,NEGTIVE_DIR_NAME);
+    strcpy(cutFilename + length,filename);
+
+    while (rect.width < MAX_SAMPLE_WIDTH && rect.height < MAX_SAMPLE_HEIGHT) {
+        widthStep  = rect.width*0.8;
+        heightStep = rect.height*0.8;
+        heightStep = heightStep < MIN_STEP ? MIN_STEP : heightStep;
+        widthStep = widthStep < MIN_STEP ? MIN_STEP : widthStep;
+
+        for (int row = 0; row < mat.rows - rect.height; row += heightStep) {
+            rect.y = row;
+            for (int col = 0;col < mat.cols - rect.width; col += widthStep) {
+                rect.x = col;
+                if (!isInRect(rects,rect)) {
+                    sprintf(cutFilename + length + filenameLength,"-%d.png",count);
+                    cut = Mat(mat,
+                              Range(rect.y,rect.y+rect.height),//row range
+                              Range(rect.x,rect.x+rect.width));//col range
+                    if (!cut.empty()) {
+                        count++;
+                        resize(cut,resizeCut,Size(32,32),INTER_AREA);
+                        imwrite(cutFilename, resizeCut);
+                    }
+                }
+            }
+        }
+        rect.width = (int) (rect.width * FACTOR);
+        rect.height = (int) (rect.height * FACTOR);
+    }
+    count = 0;
+    length = strlen(POSTIVE_DIR_NAME);
+    strcpy(cutFilename,POSTIVE_DIR_NAME);
+    strcpy(cutFilename + length,filename);
+
+    for (vector<Rect>::iterator iter = rects.begin(); iter != rects.end(); ++iter) {
+        strcpy(cutFilename + length,filename);
+        sprintf(cutFilename + length + filenameLength,"-%d.png",count);
+        count++;
+        if (iter->height > iter->width) {
+            iter->width = iter->height;
+        } else {
+            iter->height = iter->width;
+        }
+        if (iter->y+iter->height > mat.rows) {
+            iter->y =  mat.rows - iter->height - 1;
+        }
+        if (iter->x+iter->width > mat.cols) {
+            iter->x =  mat.cols - iter->width - 1;
+        }
+        cut = Mat(mat,
+                  Range(iter->y,iter->y+iter->height),//row range
+                  Range(iter->x,iter->x+iter->width));//col range
+        resize(cut,resizeCut,Size(64,64),INTER_AREA);
+        imwrite(cutFilename, resizeCut);
+    }
+
+    printf("save finish\n");
 }
 
 /**
